@@ -152,7 +152,17 @@ async fn read_from_machine_handler(
     State(state): State<LinkState>,
     Json(input): Json<RequestIdAndTestData<Minute>>,
 ) -> LinkResult<Json<FrontendDialogData<RebarTestResult>>> {
-    let (test_results, mut message) = get_test_results(&state.client, &input.request_id).await?;
+    let (mut test_results, mut message) =
+        get_test_results(&state.client, &input.request_id).await?;
+
+    // Sort the test_results by diameter, then timestamp.
+    test_results.sort_by(|a, b| {
+        a.diameter
+            .partial_cmp(&b.diameter)
+            .unwrap()
+            .then(a.timestamp.partial_cmp(&b.timestamp).unwrap())
+    });
+
     let mut rebar_test_results = Vec::new();
 
     let initial_bar_count = input.test_data.count_bars();
