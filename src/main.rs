@@ -32,7 +32,14 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .layer(TraceLayer::new_for_http());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    let port: u16 = std::env::args()
+        .nth(1)
+        .or_else(|| std::env::var("PORT").ok())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(55000);
+
+    let bind_addr = format!("0.0.0.0:{}", port);
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("Listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
 
