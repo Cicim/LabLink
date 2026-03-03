@@ -1,5 +1,8 @@
+use messages::ResponseMessage;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
+pub(crate) mod machines;
+pub(crate) mod messages;
 pub(crate) mod steel_extractor;
 
 #[derive(Deserialize)]
@@ -10,12 +13,14 @@ pub(crate) struct RequestIdAndTestData<T> {
     pub test_data: T,
 }
 
+/// The information for the LabLink dialog input to select rows.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(bound = "R: Serialize + DeserializeOwned")]
-pub(crate) struct RowsWithColumnNames<R> {
+pub(crate) struct FrontendDialogData<R> {
     pub(crate) rows: Vec<Option<R>>,
     pub(crate) column_names: Vec<(&'static str, &'static str)>,
+    pub(crate) message: ResponseMessage,
 }
 
 #[derive(Serialize, Deserialize)]

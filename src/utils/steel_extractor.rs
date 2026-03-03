@@ -7,30 +7,39 @@ use crate::{
     upstream::{get_json, post_json_text_body},
 };
 
-// static MACHINE_URLS: &[&str] = &["http://192.168.20.250:80", "http://192.168.20.251:80"];
-static MACHINE_URLS: &[&str] = &["http://192.168.20.250:80"];
+use super::{
+    machines::{Machine, MACHINES},
+    messages::ResponseMessage,
+};
+
+static STEEL_MACHINES: &[&Machine] = &[&MACHINES[0], &MACHINES[1]];
 
 pub(crate) async fn get_test_results(
     client: &Client,
     request_name: &str,
-) -> LinkResult<Vec<TestResult>> {
+) -> LinkResult<(Vec<TestResult>, ResponseMessage)> {
     // Run the two requests concurrently.
     let results = future::join_all(
-        MACHINE_URLS
+        STEEL_MACHINES
             .into_iter()
-            .map(|machine_url| read_machine(client, request_name, machine_url)),
+            .map(|machine| read_machine(client, request_name, machine)),
     )
     .await;
 
     let mut final_vec = Vec::new();
+    let mut final_message: Option<ResponseMessage> = None;
 
     // Join all the requests that didn't fail.
     for result in results {
-        let result = result?;
+        let (result, new_message) = result?;
         final_vec.extend(result);
+        final_message = match final_message {
+            None => Some(new_message),
+            Some(message) => Some(message.join(new_message)),
+        }
     }
 
-    Ok(final_vec)
+    Ok((final_vec, final_message.unwrap()))
 }
 
 #[derive(Deserialize)]
@@ -43,8 +52,8 @@ struct SuccessfulReadResult {
 pub(crate) struct TestResult {
     pub id: String,
     pub diameter: f32,
-    side_a: f32,
-    side_b: f32,
+    // side_a: f32,
+    // side_b: f32,
     pub mass: f32,
     pub length: f32,
     pub fy: f32,
@@ -66,22 +75,39 @@ fn controls() -> String {
 async fn read_machine(
     client: &Client,
     request_name: &str,
-    machine_url: &str,
-) -> LinkResult<Vec<TestResult>> {
-    if !test_connection(client, machine_url).await {
-        return Ok(Vec::new());
+    machine: &Machine,
+) -> LinkResult<(Vec<TestResult>, ResponseMessage)> {
+    if !test_connection(client, machine).await {
+        return Ok((
+            Vec::new(),
+            ResponseMessage::new_error(format!(
+                "Impossibile connettersi a {}. Potrebbero mancare dei risultati",
+                machine.name
+            )),
+        ));
     }
 
     let response: LinkResult<SuccessfulReadResult> =
-        post_json_text_body(client, machine_url, request_name.to_string()).await;
+        post_json_text_body(client, machine.url, request_name.to_string()).await;
 
     match response {
         Ok(SuccessfulReadResult { va, results }) => {
             tracing::trace!("Found {} steel tests for {va}", results.len());
-            Ok(results)
+
+            let results_len = results.len();
+            Ok((
+                results,
+                ResponseMessage::new_info(format!(
+                    "Trovati {} risultati su {}",
+                    results_len, machine.name
+                )),
+            ))
         }
         // If it returns a non-success error-code
-        Err(LinkError::UpstreamStatus { .. }) => Ok(Vec::new()),
+        Err(LinkError::UpstreamStatus { .. }) => Ok((
+            Vec::new(),
+            ResponseMessage::new_info(format!("Nessun risultato trovato su {}", machine.name)),
+        )),
         // Otherwise propagate the error
         Err(x) => Err(x),
     }
@@ -93,12 +119,12 @@ struct HealthMessage {
 }
 
 /// Checks connection to a given steel traction machine.
-async fn test_connection(client: &Client, machine_url: &str) -> bool {
+async fn test_connection(client: &Client, machine: &Machine) -> bool {
     // Connect to the address at the root to receive the health status.
-    match get_json::<HealthMessage>(client, machine_url).await {
+    match get_json::<HealthMessage>(client, machine.url).await {
         Ok(HealthMessage { status }) => status == "ok",
         Err(e) => {
-            tracing::error!("Error while testing connection to {}: {}", machine_url, e);
+            tracing::error!("Error while testing connection to {}: {}", machine.url, e);
             false
         }
     }

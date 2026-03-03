@@ -1,14 +1,15 @@
 use axum::routing::{get, post};
 use axum::{extract::State, Json, Router};
-use chrono::{DateTime, NaiveDateTime, SecondsFormat, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::LinkResult;
 use crate::handle_test;
+use crate::utils::messages::ResponseMessage;
 use crate::utils::steel_extractor::get_test_results;
 use crate::utils::{
-    Method, MethodInput, MethodOutput, RequestIdAndTestData, RowsWithColumnNames, TestDataAndRows,
+    FrontendDialogData, Method, MethodInput, MethodOutput, RequestIdAndTestData, TestDataAndRows,
 };
 
 /// The minute type in the beginning.
@@ -32,12 +33,6 @@ impl Minute {
             .filter_map(|m| m)
             .next()
             .map(|m| m.to_string());
-
-        let is_controls = self
-            .macchina
-            .as_ref()
-            .map(|m| m.starts_with("controls"))
-            .unwrap_or(false);
 
         let mut groups = vec![];
 
@@ -150,9 +145,11 @@ struct RebarTestResult {
 async fn read_from_machine_handler(
     State(state): State<LinkState>,
     Json(input): Json<RequestIdAndTestData<Minute>>,
-) -> LinkResult<Json<RowsWithColumnNames<RebarTestResult>>> {
-    let test_results = get_test_results(&state.client, &input.request_id).await?;
+) -> LinkResult<Json<FrontendDialogData<RebarTestResult>>> {
+    let (test_results, mut message) = get_test_results(&state.client, &input.request_id).await?;
     let mut rebar_test_results = Vec::new();
+
+    let initial_bar_count = input.test_data.count_bars();
 
     for res in test_results {
         if res.ty != 0 {
@@ -170,8 +167,32 @@ async fn read_from_machine_handler(
             machine: res.machine.clone(),
         }))
     }
+    let new_bar_count = rebar_test_results.len();
 
-    Ok(Json(RowsWithColumnNames {
+    if initial_bar_count > new_bar_count {
+        message = message.join(ResponseMessage::new_warning(format!(
+            "Sono state trovate {} barre, ma puoi selezionarne solo {}. \
+Verifica i dati del materiale prima di procedere, altrimenti le ultime {} \
+barre verranno ignorate.",
+            initial_bar_count,
+            new_bar_count,
+            initial_bar_count - new_bar_count
+        )))
+    } else if initial_bar_count < new_bar_count {
+        message = message.join(ResponseMessage::new_warning(format!(
+            "Sono state trovate {} barre, ma ne servirebbero almeno {}. \
+Sono state inseriti {} spaziatori alla fine.",
+            initial_bar_count,
+            new_bar_count,
+            new_bar_count - initial_bar_count
+        )));
+
+        while rebar_test_results.len() < new_bar_count {
+            rebar_test_results.push(None);
+        }
+    }
+
+    Ok(Json(FrontendDialogData {
         rows: rebar_test_results,
         column_names: vec![
             ("id", "ID"),
@@ -184,6 +205,7 @@ async fn read_from_machine_handler(
             ("timestamp", "Timestamp"),
             ("machine", "Macchina"),
         ],
+        message,
     }))
 }
 
