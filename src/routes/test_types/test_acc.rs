@@ -42,7 +42,7 @@ impl Minute {
             let group_bars = bars.split_at(group_size).0;
 
             // Compute the timestamp for this group.
-            let timestamp = group_bars
+            let avg_timestamp = group_bars
                 .iter()
                 .map(|b| b.as_ref().map(|b| b.timestamp))
                 .filter_map(|t| t)
@@ -51,7 +51,7 @@ impl Minute {
 
             let mut samples = vec![];
 
-            for _ in 0..group_size {
+            for i in 0..group_size {
                 let bar = bars.remove(0);
 
                 let sample = if let Some(bar) = bar {
@@ -61,16 +61,22 @@ impl Minute {
                         fy: Some(bar.fy),
                         length: Some(bar.length),
                         mass: Some(bar.mass),
+                        lu: group.samples[i].lu.clone(),
+                        pieg: group.samples[i].pieg.clone(),
                     }
                 } else {
-                    Sample::default()
+                    // Keep the old sample.
+                    group.samples[i].clone()
                 };
 
                 samples.push(sample)
             }
 
             groups.push(Group {
-                date: Some(timestamp_to_date(timestamp)),
+                date: match avg_timestamp {
+                    x if x.is_nan() || x == 0f64 => group.date.clone(),
+                    x => Some(timestamp_to_date(x)),
+                },
                 sn: group.sn,
                 steelworks: group.steelworks,
                 format: group.format.clone(),
@@ -94,7 +100,7 @@ struct Group {
     format: Option<String>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct Sample {
     // n: computed
     // c: computed
@@ -108,10 +114,10 @@ struct Sample {
     ft: Option<f32>,
     // ft_fy: computed
     // fy_fynom: computed
-    // lu: handled by the machine
+    lu: Option<f32>,
     // agt: computed
     // dmand: related to bending
-    // pieg: related to bending
+    pieg: Option<String>,
 }
 
 /// Converts a timestamp to a date, completely disregarding the nanoseconds.
@@ -169,25 +175,25 @@ async fn read_from_machine_handler(
     }
     let new_bar_count = rebar_test_results.len();
 
-    if initial_bar_count > new_bar_count {
+    if new_bar_count > initial_bar_count {
         message = message.join(ResponseMessage::new_warning(format!(
             "Sono state trovate {} barre, ma puoi selezionarne solo {}. \
 Verifica i dati del materiale prima di procedere, altrimenti le ultime {} \
-barre verranno ignorate.",
-            initial_bar_count,
+barre verranno ignorate",
             new_bar_count,
-            initial_bar_count - new_bar_count
+            initial_bar_count,
+            new_bar_count - initial_bar_count
         )))
-    } else if initial_bar_count < new_bar_count {
+    } else if new_bar_count < initial_bar_count {
         message = message.join(ResponseMessage::new_warning(format!(
             "Sono state trovate {} barre, ma ne servirebbero almeno {}. \
-Sono state inseriti {} spaziatori alla fine.",
-            initial_bar_count,
+Sono stati inseriti {} spaziatori alla fine",
             new_bar_count,
-            new_bar_count - initial_bar_count
+            initial_bar_count,
+            initial_bar_count - new_bar_count
         )));
 
-        while rebar_test_results.len() < new_bar_count {
+        while rebar_test_results.len() < initial_bar_count {
             rebar_test_results.push(None);
         }
     }
@@ -235,7 +241,7 @@ async fn callback_handler(
 handle_test!(
     "ACC.TP",
     vec![Method::new("get", "Leggi i dati dalla macchina")
-        .with_input(MethodInput::RequestIdAndTestData)
+        .with_input(MethodInput::RequestNameAndTestData)
         .with_output(MethodOutput::NewTestDataAfterSelection {
             callback: "get/callback".to_string()
         }),]

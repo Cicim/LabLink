@@ -77,18 +77,20 @@ impl Method {
 }
 
 #[derive(Serialize)]
+#[serde(tag = "type")]
 pub(crate) enum MethodInput {
     /// Receives the request id and the test data.
-    ///
-    /// See [`RequestIdAndTestData`]
-    RequestIdAndTestData,
+    #[serde(rename = "search-request")]
+    RequestNameAndTestData,
 }
 
 #[derive(Serialize)]
+#[serde(tag = "type")]
 pub(crate) enum MethodOutput {
     /// Returns a table that can be manipulated by the client,
     /// but which needs to be sent back with the test data in
     /// order to build the final result.
+    #[serde(rename = "search-response")]
     NewTestDataAfterSelection { callback: String },
 }
 

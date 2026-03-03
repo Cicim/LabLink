@@ -3,7 +3,7 @@ pub(crate) struct Machine {
     pub url: &'static str,
 }
 
-pub(crate) static MACHINES: &[Machine] = &[
+pub(crate) static STEEL_MACHINES: &[Machine] = &[
     Machine {
         name: "Controls",
         url: "http://192.168.20.250:80",

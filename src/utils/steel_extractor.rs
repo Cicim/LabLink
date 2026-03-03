@@ -8,11 +8,9 @@ use crate::{
 };
 
 use super::{
-    machines::{Machine, MACHINES},
+    machines::{Machine, STEEL_MACHINES},
     messages::ResponseMessage,
 };
-
-static STEEL_MACHINES: &[&Machine] = &[&MACHINES[0], &MACHINES[1]];
 
 pub(crate) async fn get_test_results(
     client: &Client,
@@ -81,7 +79,7 @@ async fn read_machine(
         return Ok((
             Vec::new(),
             ResponseMessage::new_error(format!(
-                "Impossibile connettersi a {}. Potrebbero mancare dei risultati",
+                "Impossibile connettersi a {}, potrebbero mancare dei risultati",
                 machine.name
             )),
         ));
