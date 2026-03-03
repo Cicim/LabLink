@@ -1,13 +1,14 @@
 use futures::future;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::{
     errors::{LinkError, LinkResult},
     upstream::{get_json, post_json_text_body},
 };
 
-static MACHINE_URLS: &[&str] = &["http://192.168.20.250:80", "http://192.168.20.251:80"];
+// static MACHINE_URLS: &[&str] = &["http://192.168.20.250:80", "http://192.168.20.251:80"];
+static MACHINE_URLS: &[&str] = &["http://192.168.20.250:80"];
 
 pub(crate) async fn get_test_results(
     client: &Client,
@@ -38,22 +39,22 @@ struct SuccessfulReadResult {
     results: Vec<TestResult>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct TestResult {
-    id: String,
-    diameter: f32,
+    pub id: String,
+    pub diameter: f32,
     side_a: f32,
     side_b: f32,
-    mass: f32,
-    length: f32,
-    fy: f32,
-    ft: f32,
-    f02: bool,
+    pub mass: f32,
+    pub length: f32,
+    pub fy: f32,
+    pub ft: f32,
+    pub f02: bool,
     #[serde(rename = "type")]
-    ty: u8,
-    timestamp: f64,
+    pub ty: u8,
+    pub timestamp: f64,
     #[serde(default = "controls")]
-    machine: String,
+    pub machine: String,
 }
 
 fn controls() -> String {
