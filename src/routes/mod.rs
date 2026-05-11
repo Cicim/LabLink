@@ -1,7 +1,6 @@
 mod test_types;
 
 use axum::{routing::get, Json, Router};
-use reqwest::Client;
 use serde::Serialize;
 
 use crate::errors::LinkResult;
@@ -21,8 +20,8 @@ async fn root_handler() -> LinkResult<Json<VersionInfo>> {
 
 /// Assembles all route groups into a single `Router`.
 /// The shared `Client` is injected as axum `State`.
-pub fn router(client: Client) -> Router {
+pub fn router() -> Router {
     Router::new()
         .route("/", get(root_handler))
-        .nest("/api", test_types::router(client))
+        .nest("/api", test_types::router())
 }

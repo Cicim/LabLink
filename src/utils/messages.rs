@@ -6,7 +6,7 @@ pub(crate) struct ResponseMessage {
     severity: Severity,
 }
 
-#[derive(Serialize, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Serialize, Eq, Ord, PartialEq, PartialOrd, Clone, Copy)]
 pub(crate) enum Severity {
     #[serde(rename = "info")]
     Info,
@@ -42,5 +42,11 @@ impl ResponseMessage {
             message: format!("{}. {}", self.message, other.message),
             severity: self.severity.max(other.severity),
         }
+    }
+
+    /// Appends a message to this one, keeping the higher severity.
+    pub fn append(&mut self, other: Self) {
+        self.message = format!("{}. {}", self.message, other.message);
+        self.severity = self.severity.max(other.severity);
     }
 }

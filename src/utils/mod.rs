@@ -97,8 +97,9 @@ pub(crate) enum MethodOutput {
 #[macro_export]
 macro_rules! handle_test {
     ($code:expr, $functions:expr) => {
-        async fn test_source_handler() -> LinkResult<Json<crate::utils::MethodList>> {
-            Ok(Json(crate::utils::MethodList::new($code, $functions)))
+        async fn test_source_handler(
+        ) -> crate::errors::LinkResult<axum::Json<crate::utils::MethodList>> {
+            Ok(axum::Json(crate::utils::MethodList::new($code, $functions)))
         }
     };
 }

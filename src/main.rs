@@ -18,9 +18,6 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Build the HTTP client shared across all handlers
-    let http_client = upstream::build_client()?;
-
     // CORS layer — adjust the allowed origins for production
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
@@ -28,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
         .allow_origin(Any);
 
     let app = Router::new()
-        .merge(routes::router(http_client))
+        .merge(routes::router())
         .layer(cors)
         .layer(TraceLayer::new_for_http());
 

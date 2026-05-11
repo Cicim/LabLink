@@ -1,8 +1,12 @@
 mod test_acc;
+mod test_carp_lp;
+
+mod utils;
 
 use axum::Router;
-use reqwest::Client;
 
-pub fn router(client: Client) -> Router {
-    Router::new().nest("/tests", test_acc::router(client))
+pub fn router() -> Router {
+    Router::new()
+        .nest("/tests/ACC.TP", test_acc::router())
+        .nest("/tests/CARP.LP", test_carp_lp::router())
 }

@@ -1,13 +1,12 @@
 use axum::routing::{get, post};
-use axum::{extract::State, Json, Router};
-use chrono::{DateTime, Utc};
-use reqwest::Client;
+use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::LinkResult;
 use crate::handle_test;
-use crate::utils::messages::ResponseMessage;
-use crate::utils::steel_extractor::get_test_results;
+use crate::routes::test_types::utils::*;
+use crate::upstream::build_client;
+use crate::utils::steel_extractor::*;
 use crate::utils::{
     FrontendDialogData, Method, MethodInput, MethodOutput, RequestIdAndTestData, TestDataAndRows,
 };
@@ -26,13 +25,7 @@ impl Minute {
     }
 
     fn rebuild_with_bars(&self, mut bars: Vec<Option<RebarTestResult>>) -> Minute {
-        // Get the machines for all the bars.
-        let machine = bars
-            .iter()
-            .map(|bar| bar.as_ref().map(|b| b.machine.as_str()))
-            .filter_map(|m| m)
-            .next()
-            .map(|m| m.to_string());
+        let machine = get_test_machine(&bars);
 
         let mut groups = vec![];
 
@@ -40,14 +33,7 @@ impl Minute {
             let group_size = group.samples.len();
             // Take the next n bars from that group
             let group_bars = bars.split_at(group_size).0;
-
-            // Compute the timestamp for this group.
-            let avg_timestamp = group_bars
-                .iter()
-                .map(|b| b.as_ref().map(|b| b.timestamp))
-                .filter_map(|t| t)
-                .sum::<f64>()
-                / group_bars.len() as f64;
+            let date = get_avg_timestamp(&group_bars, &group.date);
 
             let mut samples = vec![];
 
@@ -73,10 +59,7 @@ impl Minute {
             }
 
             groups.push(Group {
-                date: match avg_timestamp {
-                    x if x.is_nan() || x == 0f64 => group.date.clone(),
-                    x => Some(timestamp_to_date(x)),
-                },
+                date,
                 sn: group.sn,
                 steelworks: group.steelworks,
                 format: group.format.clone(),
@@ -120,20 +103,6 @@ struct Sample {
     pieg: Option<String>,
 }
 
-/// Converts a timestamp to a date, completely disregarding the nanoseconds.
-fn timestamp_to_date(timestamp: f64) -> String {
-    // Split into seconds + nanoseconds
-    let secs = timestamp.trunc() as i64;
-
-    let datetime = DateTime::<Utc>::from_timestamp(secs, 0).expect("Invalid timestamp");
-    datetime.format("%Y-%m-%d").to_string()
-}
-
-#[derive(Clone)]
-pub struct LinkState {
-    pub client: Client,
-}
-
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 struct RebarTestResult {
     id: String,
@@ -147,13 +116,37 @@ struct RebarTestResult {
     machine: String,
 }
 
+impl From<TestResult> for RebarTestResult {
+    fn from(value: TestResult) -> Self {
+        Self {
+            id: value.id.clone(),
+            diameter: value.diameter,
+            mass: value.mass,
+            length: value.length,
+            fy: (value.fy * 1000f32).trunc() / 1000f32,
+            ft: (value.ft * 1000f32).trunc() / 1000f32,
+            f02: value.f02,
+            timestamp: value.timestamp.round(),
+            machine: value.machine.clone(),
+        }
+    }
+}
+
+impl CommonProperties for RebarTestResult {
+    fn get_timestamp(&self) -> f64 {
+        self.timestamp
+    }
+    fn get_machine(&self) -> &str {
+        &self.machine
+    }
+}
+
 /// /api/tests/ACC/get route
 async fn read_from_machine_handler(
-    State(state): State<LinkState>,
     Json(input): Json<RequestIdAndTestData<Minute>>,
 ) -> LinkResult<Json<FrontendDialogData<RebarTestResult>>> {
-    let (mut test_results, mut message) =
-        get_test_results(&state.client, &input.request_id).await?;
+    let client = build_client()?;
+    let (mut test_results, mut message) = get_test_results(&client, &input.request_id).await?;
 
     // Sort the test_results by diameter, then timestamp.
     test_results.sort_by(|a, b| {
@@ -163,50 +156,9 @@ async fn read_from_machine_handler(
             .then(a.timestamp.partial_cmp(&b.timestamp).unwrap())
     });
 
-    let mut rebar_test_results = Vec::new();
-
+    let mut rebar_test_results = filter_map_tractions(test_results, 0);
     let initial_bar_count = input.test_data.count_bars();
-
-    for res in test_results {
-        if res.ty != 0 {
-            continue;
-        }
-        rebar_test_results.push(Some(RebarTestResult {
-            id: res.id.clone(),
-            diameter: res.diameter,
-            mass: res.mass,
-            length: res.length,
-            fy: (res.fy * 1000f32).trunc() / 1000f32,
-            ft: (res.ft * 1000f32).trunc() / 1000f32,
-            f02: res.f02,
-            timestamp: res.timestamp.round(),
-            machine: res.machine.clone(),
-        }))
-    }
-    let new_bar_count = rebar_test_results.len();
-
-    if new_bar_count > initial_bar_count {
-        message = message.join(ResponseMessage::new_warning(format!(
-            "Sono state trovate {} barre, ma puoi selezionarne solo {}. \
-Verifica i dati del materiale prima di procedere, altrimenti le ultime {} \
-barre verranno ignorate",
-            new_bar_count,
-            initial_bar_count,
-            new_bar_count - initial_bar_count
-        )))
-    } else if new_bar_count < initial_bar_count {
-        message = message.join(ResponseMessage::new_warning(format!(
-            "Sono state trovate {} barre, ma ne servirebbero almeno {}. \
-Sono stati inseriti {} spaziatori alla fine",
-            new_bar_count,
-            initial_bar_count,
-            initial_bar_count - new_bar_count
-        )));
-
-        while rebar_test_results.len() < initial_bar_count {
-            rebar_test_results.push(None);
-        }
-    }
+    add_traction_spacers(&mut rebar_test_results, initial_bar_count, &mut message);
 
     Ok(Json(FrontendDialogData {
         rows: rebar_test_results,
@@ -227,7 +179,6 @@ Sono stati inseriti {} spaziatori alla fine",
 
 /// /api/tests/ACC/get/callback route
 async fn callback_handler(
-    State(_): State<LinkState>,
     Json(TestDataAndRows {
         test_data,
         mut rows,
@@ -257,11 +208,9 @@ handle_test!(
         }),]
 );
 
-pub fn router(client: Client) -> Router {
-    let state = LinkState { client };
+pub(super) fn router() -> Router {
     Router::new()
-        .route("/ACC.TP", get(test_source_handler))
-        .route("/ACC.TP/get", post(read_from_machine_handler))
-        .route("/ACC.TP/get/callback", post(callback_handler))
-        .with_state(state)
+        .route("/", get(test_source_handler))
+        .route("/get", post(read_from_machine_handler))
+        .route("/get/callback", post(callback_handler))
 }

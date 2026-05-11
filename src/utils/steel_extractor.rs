@@ -1,6 +1,6 @@
 use futures::future;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{LinkError, LinkResult},
@@ -46,12 +46,14 @@ struct SuccessfulReadResult {
     results: Vec<TestResult>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct TestResult {
     pub id: String,
     pub diameter: f32,
-    // side_a: f32,
-    // side_b: f32,
+    pub side_a: Option<f32>,
+    pub side_b: Option<f32>,
+    pub profile: Option<String>,
+    pub quality: Option<String>,
     pub mass: f32,
     pub length: f32,
     pub fy: f32,
