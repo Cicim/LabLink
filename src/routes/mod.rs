@@ -1,3 +1,4 @@
+mod capabilities;
 mod test_types;
 
 use axum::{routing::get, Json, Router};
@@ -24,4 +25,5 @@ pub fn router() -> Router {
     Router::new()
         .route("/", get(root_handler))
         .nest("/api", test_types::router())
+        .nest("/capabilities", capabilities::router())
 }
