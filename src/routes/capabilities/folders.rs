@@ -1,10 +1,6 @@
 use axum::{routing::post, Json, Router};
 use opener::OpenError;
 use serde::Deserialize;
-use winprint::ticket::FeatureOptionPackWithPredefined;
-use winprint::ticket::PredefinedMediaName;
-use winprint::ticket::PredefinedPageOutputColor;
-use winprint::ticket::PrintTicketBuilder;
 
 pub fn router() -> Router {
     Router::new()
@@ -47,21 +43,27 @@ struct PrintFolder {
     path: String,
 }
 
+#[cfg(target_os = "windows")]
+use winprint::{
+    printer::{FilePrinter, PdfiumPrinter, PrinterDevice},
+    ticket::{
+        FeatureOptionPack, FeatureOptionPackWithPredefined, PredefinedMediaName,
+        PredefinedPageOutputColor, PrintCapabilities, PrintTicketBuilder,
+    },
+};
+
+#[allow(unused)]
 async fn print_handler(Json(PrintFolder { path }): Json<PrintFolder>) -> Json<String> {
+    #[cfg(target_os = "windows")]
     print_file(&path);
 
     Json("OK".into())
 }
 
-use std::path::Path;
-use winprint::printer::FilePrinter;
-use winprint::printer::PdfiumPrinter;
-use winprint::printer::PrinterDevice;
-use winprint::ticket::FeatureOptionPack;
-use winprint::ticket::PrintCapabilities;
-
+#[cfg(target_os = "windows")]
 use crate::routes::capabilities::page_scaling::{PageScaling, PredefinedPageScaling};
 
+#[cfg(target_os = "windows")]
 fn print_file(path: &str) {
     let printers = PrinterDevice::all().expect("Failed to get printers");
     let my_device = printers
@@ -82,14 +84,9 @@ fn print_file(path: &str) {
         .find(|x| x.as_predefined_name() == Some(PredefinedPageOutputColor::Grayscale))
         .unwrap();
 
-    let page_scaling = PageScaling::list(&capabilities)
-        .find(|x| x.as_predefined_name() == Some(PredefinedPageScaling::Fill))
-        .unwrap();
-
     let mut builder = PrintTicketBuilder::new(&my_device).unwrap();
     builder.merge(a4_media).unwrap();
     builder.merge(monochrome_media).unwrap();
-    builder.merge(page_scaling).unwrap();
     let ticket = builder.build().unwrap();
     println!(
         "{}",
@@ -97,6 +94,6 @@ fn print_file(path: &str) {
     );
 
     let pdf = PdfiumPrinter::new(my_device);
-    let path = Path::new(path);
+    let path = std::path::Path::new(path);
     pdf.print(path, ticket).unwrap();
 }

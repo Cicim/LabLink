@@ -1,5 +1,4 @@
 mod folders;
-mod page_scaling;
 
 use axum::Router;
 
