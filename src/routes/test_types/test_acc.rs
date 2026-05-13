@@ -14,6 +14,9 @@ use crate::utils::{
 /// The minute type in the beginning.
 #[derive(Debug, Serialize, Deserialize)]
 struct Minute {
+    /// The single machine used by all samples in a minute
+    ///
+    /// Remove in favor of [`Group::machine`]
     macchina: Option<String>,
     groups: Vec<Group>,
 }
@@ -24,7 +27,7 @@ impl Minute {
         self.groups.iter().map(|g| g.samples.iter().count()).sum()
     }
 
-    fn rebuild_with_bars(&self, mut bars: Vec<Option<RebarTestResult>>) -> Minute {
+    fn rebuild_with_bars(&self, mut bars: Vec<Option<TractionResult>>) -> Minute {
         let machine = get_test_machine(&bars);
 
         let mut groups = vec![];
@@ -34,6 +37,7 @@ impl Minute {
             // Take the next n bars from that group
             let group_bars = bars.split_at(group_size).0;
             let date = get_avg_timestamp(&group_bars, &group.date);
+            let machine = get_test_machine(&group_bars);
 
             let mut samples = vec![];
 
@@ -64,6 +68,7 @@ impl Minute {
                 steelworks: group.steelworks,
                 format: group.format.clone(),
                 samples,
+                machine: machine.or(group.machine.clone()),
             })
         }
 
@@ -81,6 +86,7 @@ struct Group {
     samples: Vec<Sample>,
     steelworks: Option<u16>,
     format: Option<String>,
+    machine: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -103,48 +109,10 @@ struct Sample {
     pieg: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-struct RebarTestResult {
-    id: String,
-    diameter: f32,
-    mass: f32,
-    length: f32,
-    fy: f32,
-    ft: f32,
-    f02: bool,
-    timestamp: f64,
-    machine: String,
-}
-
-impl From<TestResult> for RebarTestResult {
-    fn from(value: TestResult) -> Self {
-        Self {
-            id: value.id.clone(),
-            diameter: value.diameter,
-            mass: value.mass,
-            length: value.length,
-            fy: (value.fy * 1000f32).trunc() / 1000f32,
-            ft: (value.ft * 1000f32).trunc() / 1000f32,
-            f02: value.f02,
-            timestamp: value.timestamp.round(),
-            machine: value.machine.clone(),
-        }
-    }
-}
-
-impl CommonProperties for RebarTestResult {
-    fn get_timestamp(&self) -> f64 {
-        self.timestamp
-    }
-    fn get_machine(&self) -> &str {
-        &self.machine
-    }
-}
-
 /// /api/tests/ACC/get route
 async fn read_from_machine_handler(
     Json(input): Json<RequestIdAndTestData<Minute>>,
-) -> LinkResult<Json<FrontendDialogData<RebarTestResult>>> {
+) -> LinkResult<Json<FrontendDialogData<TractionResult>>> {
     let client = build_client()?;
     let (mut test_results, mut message) = get_test_results(&client, &input.request_id).await?;
 
@@ -182,7 +150,7 @@ async fn callback_handler(
     Json(TestDataAndRows {
         test_data,
         mut rows,
-    }): Json<TestDataAndRows<Minute, RebarTestResult>>,
+    }): Json<TestDataAndRows<Minute, TractionResult>>,
 ) -> LinkResult<Json<Minute>> {
     let minute_bars = test_data.count_bars();
     // Remove all the extra bars from the input.

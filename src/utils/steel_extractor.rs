@@ -15,7 +15,7 @@ use super::{
 pub(crate) async fn get_test_results(
     client: &Client,
     request_name: &str,
-) -> LinkResult<(Vec<TestResult>, ResponseMessage)> {
+) -> LinkResult<(Vec<TractionResult>, ResponseMessage)> {
     // Run the two requests concurrently.
     let results = future::join_all(
         STEEL_MACHINES
@@ -43,17 +43,24 @@ pub(crate) async fn get_test_results(
 #[derive(Deserialize)]
 struct SuccessfulReadResult {
     va: String,
-    results: Vec<TestResult>,
+    results: Vec<TractionResult>,
 }
 
+/// The traction test read from the machine
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct TestResult {
+pub(crate) struct TractionResult {
     pub id: String,
+
+    #[serde(default)]
     pub diameter: f32,
-    pub side_a: Option<f32>,
-    pub side_b: Option<f32>,
+    #[serde(default)]
+    pub side_a: f32,
+    #[serde(default)]
+    pub side_b: f32,
+
     pub profile: Option<String>,
     pub quality: Option<String>,
+
     pub mass: f32,
     pub length: f32,
     pub fy: f32,
@@ -76,7 +83,7 @@ async fn read_machine(
     client: &Client,
     request_name: &str,
     machine: &Machine,
-) -> LinkResult<(Vec<TestResult>, ResponseMessage)> {
+) -> LinkResult<(Vec<TractionResult>, ResponseMessage)> {
     if !test_connection(client, machine).await {
         return Ok((
             Vec::new(),
@@ -91,10 +98,19 @@ async fn read_machine(
         post_json_text_body(client, machine.url, request_name.to_string()).await;
 
     match response {
-        Ok(SuccessfulReadResult { va, results }) => {
+        Ok(SuccessfulReadResult { va, mut results }) => {
             tracing::trace!("Found {} steel tests for {va}", results.len());
 
             let results_len = results.len();
+            // Round everything to a more manageable level.
+            for test in results.iter_mut() {
+                test.side_a = (test.side_a * 100f32).trunc() / 100f32;
+                test.side_b = (test.side_b * 100f32).trunc() / 100f32;
+                test.fy = (test.fy * 1000f32).trunc() / 1000f32;
+                test.ft = (test.ft * 1000f32).trunc() / 1000f32;
+                test.timestamp = test.timestamp.round();
+            }
+
             Ok((
                 results,
                 ResponseMessage::new_info(format!(

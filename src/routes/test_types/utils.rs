@@ -1,22 +1,17 @@
 use chrono::{DateTime, Utc};
 
-use crate::utils::{messages::ResponseMessage, steel_extractor::TestResult};
+use crate::utils::{messages::ResponseMessage, steel_extractor::TractionResult};
 
-pub trait CommonProperties {
-    fn get_timestamp(&self) -> f64;
-    fn get_machine(&self) -> &str;
-}
-
-pub fn filter_map_tractions<T: From<TestResult>>(
-    test_results: Vec<TestResult>,
+pub fn filter_map_tractions(
+    test_results: Vec<TractionResult>,
     type_to_keep: u8,
-) -> Vec<Option<T>> {
+) -> Vec<Option<TractionResult>> {
     let mut rebar_test_results = Vec::new();
     for res in test_results {
         if res.ty != type_to_keep {
             continue;
         }
-        rebar_test_results.push(Some(res.into()))
+        rebar_test_results.push(Some(res))
     }
     rebar_test_results
 }
@@ -55,25 +50,23 @@ Sono stati inseriti {} spaziatori alla fine",
 }
 
 /// Obtains the machine for the given tractions.
-pub fn get_test_machine<'a, T: CommonProperties + 'a>(
-    test_results: &'a [Option<T>],
-) -> Option<String> {
+pub fn get_test_machine<'a>(test_results: &'a [Option<TractionResult>]) -> Option<String> {
     // Get the machines for all the bars.
     test_results
         .iter()
-        .map(|bar| bar.as_ref().map(|b| b.get_machine()))
+        .map(|bar| bar.as_ref().map(|b| &b.machine))
         .filter_map(|m| m)
         .next()
         .map(|m| m.to_string())
 }
 
-pub fn get_avg_timestamp<T: CommonProperties>(
-    test_results: &[Option<T>],
+pub fn get_avg_timestamp(
+    test_results: &[Option<TractionResult>],
     fallback: &Option<String>,
 ) -> Option<String> {
     let avg_timestamp = test_results
         .iter()
-        .map(|b| b.as_ref().map(|b| b.get_timestamp()))
+        .map(|b| b.as_ref().map(|b| b.timestamp))
         .filter_map(|t| t)
         .sum::<f64>()
         / test_results.len() as f64;

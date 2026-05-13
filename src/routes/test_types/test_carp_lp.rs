@@ -25,7 +25,7 @@ impl Minute {
         self.samples.iter().map(|s| s.tr.len()).sum()
     }
 
-    fn rebuild_with_tractions(self, mut new_tractions: Vec<Option<TractionTestResult>>) -> Self {
+    fn rebuild_with_tractions(self, mut new_tractions: Vec<Option<TractionResult>>) -> Self {
         let mut samples = Vec::new();
 
         for sample in self.samples {
@@ -39,8 +39,8 @@ impl Minute {
                     TractionTest {
                         massa: sample.tr[i].massa.clone(),
                         l: sample.tr[i].l.clone(),
-                        s: Some(res.s),
-                        b: Some(res.b),
+                        s: Some(res.side_a),
+                        b: Some(res.side_b),
                         f02: res.f02,
                         fy: Some(res.fy),
                         ft: Some(res.ft),
@@ -106,40 +106,9 @@ pub struct TractionTest {
     // pub a: Option<f64>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct TractionTestResult {
-    id: String,
-    profile: String,
-    quality: String,
-    s: f32,
-    b: f32,
-    fy: f32,
-    ft: f32,
-    f02: bool,
-    timestamp: f64,
-    machine: String,
-}
-
-impl From<TestResult> for TractionTestResult {
-    fn from(value: TestResult) -> Self {
-        Self {
-            id: value.id,
-            profile: value.profile.unwrap_or_default(),
-            quality: value.quality.unwrap_or_default(),
-            s: value.side_a.unwrap_or_default(),
-            b: value.side_b.unwrap_or_default(),
-            fy: (value.fy * 1000f32).trunc() / 1000f32,
-            ft: (value.ft * 1000f32).trunc() / 1000f32,
-            f02: value.f02,
-            timestamp: value.timestamp,
-            machine: value.machine,
-        }
-    }
-}
-
 async fn read_from_machine_handler(
     Json(input): Json<RequestIdAndTestData<Minute>>,
-) -> LinkResult<Json<FrontendDialogData<TractionTestResult>>> {
+) -> LinkResult<Json<FrontendDialogData<TractionResult>>> {
     let client = build_client()?;
     let (all_results, mut message) = get_test_results(&client, &input.request_id).await?;
 
@@ -165,20 +134,11 @@ async fn read_from_machine_handler(
     }))
 }
 
-impl CommonProperties for TractionTestResult {
-    fn get_timestamp(&self) -> f64 {
-        self.timestamp
-    }
-    fn get_machine(&self) -> &str {
-        &self.machine
-    }
-}
-
 async fn callback_handler(
     Json(TestDataAndRows {
         test_data,
         mut rows,
-    }): Json<TestDataAndRows<Minute, TractionTestResult>>,
+    }): Json<TestDataAndRows<Minute, TractionResult>>,
 ) -> LinkResult<Json<Minute>> {
     let minute_tractions = test_data.count_tractions();
     // Remove all the extra tractions from the input.
