@@ -169,11 +169,11 @@ async fn callback_handler(
 
 handle_test!(
     "ACC.TP",
-    vec![Method::new("get", "Leggi i dati dalla macchina")
+    Method::new("get", "Leggi i dati dalla macchina")
         .with_input(MethodInput::RequestNameAndTestData)
         .with_output(MethodOutput::NewTestDataAfterSelection {
             callback: "get/callback".to_string()
-        }),]
+        })
 );
 
 pub(super) fn router() -> Router {
