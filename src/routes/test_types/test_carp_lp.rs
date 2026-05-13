@@ -25,6 +25,20 @@ impl Minute {
         self.samples.iter().map(|s| s.tr.len()).sum()
     }
 
+    fn get_traction_labels(&self) -> Vec<String> {
+        self.samples
+            .iter()
+            .map(|s| {
+                format!(
+                    "{} {} {}",
+                    s.tipo.as_deref().unwrap_or("?"),
+                    s.qual.as_deref().unwrap_or("?"),
+                    s.sigla.as_deref().unwrap_or("?")
+                )
+            })
+            .collect()
+    }
+
     fn rebuild_with_tractions(self, mut new_tractions: Vec<Option<TractionResult>>) -> Self {
         let mut samples = Vec::new();
 
@@ -80,9 +94,9 @@ pub struct Sample {
     #[serde(default)]
     pub res: Value,
     // computed
-    // pub sigla: Option<String>,
-    // pub tipo: Option<String>,
-    // pub qual: Option<String>,
+    pub sigla: Option<String>,
+    pub tipo: Option<String>,
+    pub qual: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +126,8 @@ async fn read_from_machine_handler(
     let client = build_client()?;
     let (all_results, mut message) = get_test_results(&client, &input.request_id).await?;
 
+    let labels = input.test_data.get_traction_labels();
+
     let mut traction_results = filter_map_tractions(all_results, 1);
     let initial_tractions_count = input.test_data.count_tractions();
     add_traction_spacers(&mut traction_results, initial_tractions_count, &mut message);
@@ -131,6 +147,7 @@ async fn read_from_machine_handler(
             ("machine", "Macchina"),
         ],
         message,
+        labels,
     }))
 }
 

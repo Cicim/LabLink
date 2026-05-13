@@ -27,6 +27,23 @@ impl Minute {
         self.groups.iter().map(|g| g.samples.iter().count()).sum()
     }
 
+    /// Gets the original labels in the minute.
+    fn get_traction_labels(&self) -> Vec<String> {
+        self.groups
+            .iter()
+            .flat_map(|g| {
+                g.samples.iter().map(|s| {
+                    format!(
+                        "Ø{}/{} {}",
+                        s.diam.as_ref().unwrap_or(&0.0),
+                        s.n.as_ref().unwrap_or(&0.0),
+                        s.c.as_deref().unwrap_or("?")
+                    )
+                })
+            })
+            .collect()
+    }
+
     fn rebuild_with_bars(&self, mut bars: Vec<Option<TractionResult>>) -> Minute {
         let machine = get_test_machine(&bars);
 
@@ -46,6 +63,9 @@ impl Minute {
 
                 let sample = if let Some(bar) = bar {
                     Sample {
+                        n: None,
+                        c: None,
+                        diam: None,
                         f02: bar.f02,
                         ft: Some(bar.ft),
                         fy: Some(bar.fy),
@@ -91,9 +111,9 @@ struct Group {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct Sample {
-    // n: computed
-    // c: computed
-    // diam: computed
+    n: Option<f32>,
+    c: Option<String>,
+    diam: Option<f32>,
     mass: Option<f32>,
     length: Option<f32>,
     // deff: computed,
@@ -124,6 +144,8 @@ async fn read_from_machine_handler(
             .then(a.timestamp.partial_cmp(&b.timestamp).unwrap())
     });
 
+    let labels = input.test_data.get_traction_labels();
+
     let mut rebar_test_results = filter_map_tractions(test_results, 0);
     let initial_bar_count = input.test_data.count_bars();
     add_traction_spacers(&mut rebar_test_results, initial_bar_count, &mut message);
@@ -142,6 +164,7 @@ async fn read_from_machine_handler(
             ("machine", "Macchina"),
         ],
         message,
+        labels,
     }))
 }
 

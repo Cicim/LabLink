@@ -19,6 +19,7 @@ pub(crate) struct RequestIdAndTestData<T> {
 #[serde(bound = "R: Serialize + DeserializeOwned")]
 pub(crate) struct FrontendDialogData<R> {
     pub(crate) rows: Vec<Option<R>>,
+    pub(crate) labels: Vec<String>,
     pub(crate) column_names: Vec<(&'static str, &'static str)>,
     pub(crate) message: ResponseMessage,
 }

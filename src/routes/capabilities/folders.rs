@@ -47,8 +47,8 @@ struct PrintFolder {
 use winprint::{
     printer::{FilePrinter, PdfiumPrinter, PrinterDevice},
     ticket::{
-        FeatureOptionPack, FeatureOptionPackWithPredefined, PredefinedMediaName,
-        PredefinedPageOutputColor, PrintCapabilities, PrintTicketBuilder,
+        FeatureOptionPackWithPredefined, PredefinedMediaName, PredefinedPageOutputColor,
+        PrintCapabilities, PrintTicketBuilder,
     },
 };
 
@@ -59,9 +59,6 @@ async fn print_handler(Json(PrintFolder { path }): Json<PrintFolder>) -> Json<St
 
     Json("OK".into())
 }
-
-#[cfg(target_os = "windows")]
-use crate::routes::capabilities::page_scaling::{PageScaling, PredefinedPageScaling};
 
 #[cfg(target_os = "windows")]
 fn print_file(path: &str) {
