@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -6,6 +8,7 @@ use crate::errors::LinkResult;
 use crate::handle_test;
 use crate::routes::test_types::utils::*;
 use crate::upstream::build_client;
+use crate::utils::messages::ResponseMessage;
 use crate::utils::steel_extractor::*;
 use crate::utils::{
     FrontendDialogData, Method, MethodInput, MethodOutput, RequestIdAndTestData, TestDataAndRows,
@@ -35,13 +38,36 @@ impl Minute {
                 g.samples.iter().map(|s| {
                     format!(
                         "Ø{}/{} {}",
-                        s.diam.as_ref().unwrap_or(&0.0),
+                        s.diam,
                         s.n.as_ref().unwrap_or(&0.0),
                         s.c.as_deref().unwrap_or("?")
                     )
                 })
             })
             .collect()
+    }
+
+    /// Get the diameters in the minute, which determine the
+    /// order in which the samples are loaded.
+    fn get_numbered_diameters(&self) -> Vec<(u8, u16)> {
+        let mut diameter_with_nums = Vec::new();
+        let mut last_diameter_num = HashMap::new();
+
+        for group in self.groups.iter() {
+            for sample in group.samples.iter() {
+                let diameter = sample.diam as u8;
+                if !last_diameter_num.contains_key(&diameter) {
+                    last_diameter_num.insert(diameter, 1);
+                    diameter_with_nums.push((diameter, 1u16));
+                } else {
+                    let next_num = last_diameter_num[&diameter] + 1;
+                    last_diameter_num.insert(diameter, next_num);
+                    diameter_with_nums.push((diameter, next_num as u16));
+                }
+            }
+        }
+
+        diameter_with_nums
     }
 
     fn rebuild_with_bars(&self, mut bars: Vec<Option<TractionResult>>) -> Minute {
@@ -63,9 +89,6 @@ impl Minute {
 
                 let sample = if let Some(bar) = bar {
                     Sample {
-                        n: None,
-                        c: None,
-                        diam: None,
                         f02: bar.f02,
                         ft: Some(bar.ft),
                         fy: Some(bar.fy),
@@ -73,6 +96,10 @@ impl Minute {
                         mass: Some(bar.mass),
                         lu: group.samples[i].lu.clone(),
                         pieg: group.samples[i].pieg.clone(),
+                        // Since these are computed, we don't need to provide values.
+                        diam: 0.0,
+                        n: None,
+                        c: None,
                     }
                 } else {
                     // Keep the old sample.
@@ -113,7 +140,9 @@ struct Group {
 struct Sample {
     n: Option<f32>,
     c: Option<String>,
-    diam: Option<f32>,
+    /// This is computed, and we only need it to sort the samples by diameter.
+    diam: f32,
+
     mass: Option<f32>,
     length: Option<f32>,
     // deff: computed,
@@ -136,22 +165,83 @@ async fn read_from_machine_handler(
     let client = build_client()?;
     let (mut test_results, mut message) = get_test_results(&client, &input.request_id).await?;
 
-    // Sort the test_results by diameter, then timestamp.
+    // Order the test_results by timestamp.
     test_results.sort_by(|a, b| {
-        a.diameter
-            .partial_cmp(&b.diameter)
-            .unwrap()
-            .then(a.timestamp.partial_cmp(&b.timestamp).unwrap())
+        a.timestamp
+            .partial_cmp(&b.timestamp)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let labels = input.test_data.get_traction_labels();
+    let mut labels = input.test_data.get_traction_labels();
 
-    let mut rebar_test_results = filter_map_tractions(test_results, 0);
-    let initial_bar_count = input.test_data.count_bars();
-    add_traction_spacers(&mut rebar_test_results, initial_bar_count, &mut message);
+    // Filter only the ones with type 0 (rebar)
+    let mut rebar_test_results = Vec::new();
+    for res in test_results {
+        if res.ty != 0 {
+            continue;
+        }
+        rebar_test_results.push(res)
+    }
+
+    let no_results = rebar_test_results.is_empty();
+    if no_results {
+        message.append(ResponseMessage::new_error(
+            "Non è stata trovata nessuna barra tra i risultati".to_string(),
+        ));
+    }
+
+    // Sort the results by how the diameters appear in the minute.
+    let minute_diameters = input.test_data.get_numbered_diameters();
+    let mut ordered_test_results = Vec::new();
+
+    for (diameter, number) in minute_diameters {
+        // Find the first diameter in the results and add it to the ordered list.
+        let next_bar_index = rebar_test_results
+            .iter()
+            .position(|r| r.diameter as u8 == diameter || r.diameter as u8 + 1 == diameter);
+
+        match next_bar_index {
+            Some(index) => {
+                // Remove the bar from the original list and add it to the ordered list.
+                let mut bar = rebar_test_results.remove(index);
+
+                if bar.diameter as u8 + 1 == diameter {
+                    message.append(ResponseMessage::new_warning(format!(
+                        "La barra {}/{} è stata trovata (forse), ma con diametro {}",
+                        diameter, number, bar.diameter
+                    )));
+                    bar.diameter = diameter as f32;
+                }
+
+                ordered_test_results.push(Some(bar));
+            }
+            None => {
+                if !no_results {
+                    // Notify the user that the bar was not found for this diameter.
+                    message.append(ResponseMessage::new_warning(format!(
+                        "La barra {}/{} non è stata trovata",
+                        diameter, number
+                    )));
+                }
+                ordered_test_results.push(None);
+            }
+        }
+    }
+
+    // Add any remaining bars to the ordered list, in the order they appear in the minute.
+    if !rebar_test_results.is_empty() {
+        message.append(ResponseMessage::new_error(format!(
+            "Ci sono {} barre non associate a quelle nella minuta; le troverai in fondo, con etichetta ---",
+            rebar_test_results.len()
+        )));
+        for bar in rebar_test_results {
+            ordered_test_results.push(Some(bar));
+            labels.push("---".into());
+        }
+    }
 
     Ok(Json(FrontendDialogData {
-        rows: rebar_test_results,
+        rows: ordered_test_results,
         column_names: vec![
             ("id", "ID"),
             ("diameter", "Diametro"),
