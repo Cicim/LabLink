@@ -7,6 +7,7 @@ use crate::errors::LinkResult;
 use crate::handle_test;
 use crate::routes::test_types::utils::*;
 use crate::upstream::build_client;
+use crate::utils::messages::ResponseMessage;
 use crate::utils::{steel_extractor::*, TestDataAndRows};
 use crate::utils::{FrontendDialogData, Method, MethodInput, MethodOutput, RequestIdAndTestData};
 
@@ -26,17 +27,22 @@ impl Minute {
     }
 
     fn get_traction_labels(&self) -> Vec<String> {
-        self.samples
-            .iter()
-            .map(|s| {
-                format!(
-                    "{} {} {}",
-                    s.tipo.as_deref().unwrap_or("?"),
-                    s.qual.as_deref().unwrap_or("?"),
-                    s.sigla.as_deref().unwrap_or("?")
-                )
-            })
-            .collect()
+        let mut labels = Vec::new();
+
+        for sample in &self.samples {
+            let label = format!(
+                "{} {} {}",
+                sample.tipo.as_deref().unwrap_or("?"),
+                sample.qual.as_deref().unwrap_or("?"),
+                sample.sigla.as_deref().unwrap_or("?")
+            );
+
+            for tr in &sample.tr {
+                labels.push(format!("{} {}", label, tr.n.unwrap_or(1)));
+            }
+        }
+
+        labels
     }
 
     fn rebuild_with_tractions(self, mut new_tractions: Vec<Option<TractionResult>>) -> Self {
@@ -59,6 +65,8 @@ impl Minute {
                         fy: Some(res.fy),
                         ft: Some(res.ft),
                         lu: sample.tr[i].lu.clone(),
+                        // computed
+                        n: None,
                     }
                 } else {
                     // Keep the old sample.
@@ -88,6 +96,8 @@ pub struct Sample {
     #[serde(default)]
     pub tr: Vec<TractionTest>,
 
+    #[serde(default)]
+    pub sn: i32,
     // Important to carry along, but the implementation detail is not relevant.
     #[serde(default)]
     pub set_res: Value,
@@ -113,7 +123,7 @@ pub struct TractionTest {
     pub ft: Option<f32>,
     pub lu: Option<f32>,
     // computed
-    // pub n: Option<u32>,
+    pub n: Option<u32>,
     // pub s0: Option<f64>,
     // pub l0: Option<f64>,
     // pub bda: Option<f64>,
@@ -129,6 +139,12 @@ async fn read_from_machine_handler(
     let labels = input.test_data.get_traction_labels();
 
     let mut traction_results = filter_map_tractions(all_results, 1);
+
+    message.append(ResponseMessage::new_info(format!(
+        "Trovate {} trazioni su carpenteria in totale",
+        traction_results.len()
+    )));
+
     let initial_tractions_count = input.test_data.count_tractions();
     add_traction_spacers(&mut traction_results, initial_tractions_count, &mut message);
 
@@ -138,8 +154,8 @@ async fn read_from_machine_handler(
             ("profile", "Profilo"),
             ("id", "ID"),
             ("quality", "Qualità"),
-            ("s", "Spessore"),
-            ("b", "Larghezza"),
+            ("side_a", "Spessore"),
+            ("side_b", "Larghezza"),
             ("f02", "F02"),
             ("fy", "Fy"),
             ("ft", "Ft"),
