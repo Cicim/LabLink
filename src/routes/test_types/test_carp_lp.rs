@@ -59,8 +59,8 @@ impl Minute {
                     TractionTest {
                         massa: sample.tr[i].massa.clone(),
                         l: sample.tr[i].l.clone(),
-                        s: Some(res.side_a),
-                        b: Some(res.side_b),
+                        s: Some(res.side_b),
+                        b: Some(res.side_a),
                         f02: res.f02,
                         fy: Some(res.fy),
                         ft: Some(res.ft),
@@ -98,6 +98,8 @@ pub struct Sample {
 
     #[serde(default)]
     pub sn: i32,
+    pub machine: String,
+
     // Important to carry along, but the implementation detail is not relevant.
     #[serde(default)]
     pub set_res: Value,
@@ -154,8 +156,8 @@ async fn read_from_machine_handler(
             ("profile", "Profilo"),
             ("id", "ID"),
             ("quality", "Qualità"),
-            ("side_a", "Spessore"),
-            ("side_b", "Larghezza"),
+            ("side_b", "Spessore"),
+            ("side_a", "Larghezza"),
             ("f02", "F02"),
             ("fy", "Fy"),
             ("ft", "Ft"),

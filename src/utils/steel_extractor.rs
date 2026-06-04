@@ -104,11 +104,9 @@ async fn read_machine(
             let results_len = results.len();
             // Round everything to a more manageable level.
             for test in results.iter_mut() {
-                let old_side_a = test.side_a;
-                let old_side_b = test.side_b;
                 // This is inverted so that it loads correctly.
-                test.side_a = (old_side_b * 100f32).round() / 100f32;
-                test.side_b = (old_side_a * 100f32).round() / 100f32;
+                test.side_a = (test.side_a * 100f32).round() / 100f32;
+                test.side_b = (test.side_b * 100f32).round() / 100f32;
                 test.fy = (test.fy * 1000f32).round() / 1000f32;
                 test.ft = (test.ft * 1000f32).round() / 1000f32;
                 test.timestamp = test.timestamp.round();
