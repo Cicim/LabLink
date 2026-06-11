@@ -1,6 +1,7 @@
 use axum::{routing::post, Json, Router};
 use opener::OpenError;
 use serde::Deserialize;
+use std::path::{Path, PathBuf};
 
 pub fn router() -> Router {
     Router::new()
@@ -11,10 +12,13 @@ pub fn router() -> Router {
 #[derive(Deserialize)]
 struct OpenFolder {
     mode: String,
-    path: String,
+    path: Vec<String>,
 }
 
 async fn open_handler(Json(OpenFolder { mode, path }): Json<OpenFolder>) -> Json<String> {
+    let path_buf: PathBuf = path.iter().collect();
+    let path: &Path = path_buf.as_path();
+
     match mode.as_str() {
         "open" => match opener::open(path) {
             Ok(_) => Json("OK".into()),
@@ -40,7 +44,7 @@ async fn open_handler(Json(OpenFolder { mode, path }): Json<OpenFolder>) -> Json
 
 #[derive(Deserialize)]
 struct PrintFolder {
-    path: String,
+    path: Vec<String>,
 }
 
 #[cfg(target_os = "windows")]
@@ -54,6 +58,10 @@ use winprint::{
 
 #[allow(unused)]
 async fn print_handler(Json(PrintFolder { path }): Json<PrintFolder>) -> Json<String> {
+    let path_buf: PathBuf = path.iter().collect();
+    let path: &Path = path_buf.as_path();
+    let path = path.to_str().unwrap();
+
     #[cfg(target_os = "windows")]
     print_file(&path);
 
